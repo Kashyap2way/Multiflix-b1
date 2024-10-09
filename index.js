@@ -1,93 +1,61 @@
 // server/index.js
 const express = require('express');
-const nodemailer = require('nodemailer');
+const { EmailClient } = require('@azure/communication-email');
 const crypto = require('crypto');
 const bodyParser = require('body-parser');
-const http = require('http');
-const { Server } = require('socket.io');
 
 const app = express();
 app.use(bodyParser.json());
 
-// Create a Gmail transporter
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'workforudemy@gmail.com', // Your Gmail address
-        pass: 'shazam9080',    // Your Gmail password or App Password
-    },
-});
-
+// Azure Communication Services connection string
+const connectionString = "endpoint=https://multiflix-mailsystem.india.communication.azure.com/;accesskey=3amsNNHI3Yb0SFGA43oQi73Cm43p90fS0jAWMuJAwf8GfvFysqKPJQQJ99AJACULyCpZVC32AAAAAZCSsfJP"; // Replace with your connection string
+const client = new EmailClient(connectionString);
 
 let otpMap = {};
 
-// OTP Routes
-app.post('/send-otp', (req, res) => {
-const { email } = req.body;
-const otp = crypto.randomInt(100000, 999999);
-otpMap[email] = otp;
+app.post('/send-otp', async (req, res) => {
+    const { email } = req.body;
+    const otp = crypto.randomInt(100000, 999999);
+    otpMap[email] = otp;
 
-const mailOptions = {
-    from: 'your-email@example.com',
-    to: email,
-    subject: 'Your OTP Code',
-    text: `Your OTP code is: ${otp}`,
-};
+    const emailMessage = {
+        senderAddress: "DoNotReply@4b1a7594-f5ce-4794-a511-4296bf846a0f.azurecomm.net", // Your verified Azure sender address
+        content: {
+            subject: 'Your OTP Code',
+            plainText: `Your OTP code is: ${otp}`,
+            html: `
+                <html>
+                    <body>
+                        <h1>Your OTP Code</h1>
+                        <p>Your OTP code is: <strong>${otp}</strong></p>
+                    </body>
+                </html>`,
+        },
+        recipients: {
+            to: [{ address: email }],
+        },
+    };
 
-transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-    return res.status(500).send({ error: 'Failed to send OTP' });
+    try {
+        const poller = await client.beginSend(emailMessage);
+        const result = await poller.pollUntilDone();
+        console.log('Email sent successfully:', result);
+        res.send({ message: 'OTP sent!' });
+    } catch (error) {
+        console.error('Error sending email:', error);
+        console.log('Detailed Error:', error.message);
+        return res.status(500).send({ error: 'Failed to send OTP', details: error.message });
     }
-    res.send({ message: 'OTP sent!' });
 });
-});
+
 
 app.post('/verify-otp', (req, res) => {
-const { email, otp } = req.body;
-if (otpMap[email] === parseInt(otp)) {
+  const { email, otp } = req.body;
+  if (otpMap[email] === parseInt(otp)) {
     delete otpMap[email];
     return res.send({ message: 'OTP verified!' });
-}
-res.status(400).send({ error: 'Invalid OTP' });
+  }
+  res.status(400).send({ error: 'Invalid OTP' });
 });
 
-// Create an HTTP server to work with both Express and Socket.IO
-const server = http.createServer(app);
-
-// WebSocket (Socket.IO) setup for watch party
-const io = new Server(server, {
-cors: {
-    origin: '*', // In production, limit this to your frontend's domain
-},
-});
-
-io.on('connection', (socket) => {
-console.log('User connected:', socket.id);
-
-// Join a watch party room
-socket.on('join', (partyCode) => {
-    socket.join(partyCode);
-    console.log(`User joined party: ${partyCode}`);
-});
-
-// Sync play across all users in the party
-socket.on('play', (partyCode) => {
-    io.to(partyCode).emit('play');
-});
-
-// Sync pause across all users in the party
-socket.on('pause', (partyCode) => {
-    io.to(partyCode).emit('pause');
-});
-
-// Handle disconnect
-socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-});
-});
-
-// Start the server
-const PORT = process.env.PORT || 5001;
-server.listen(PORT, () => {
-console.log(`Server is running on port ${PORT}`);
-});
+app.listen(5001, () => console.log('Server running on port 5001'));
