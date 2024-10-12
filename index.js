@@ -1,6 +1,5 @@
 const io = require("socket.io")();
 const crypto = require("crypto");
-const http = require("http");
 
 const parties = {};
 
@@ -9,11 +8,12 @@ const generatePartyCode = () => {
 };
 
 module.exports = async function (context, req) {
-    // Create an HTTP server
-    const server = http.createServer();
-    
-    // Attach Socket.IO to the HTTP server
-    io.attach(server);
+    if (!context.res) {
+        context.res = {};
+    }
+
+    // Ensure you attach Socket.IO to the context
+    io.attach(context.res.socket.server);
 
     io.on('connection', (socket) => {
         console.log('New user connected');
@@ -57,11 +57,7 @@ module.exports = async function (context, req) {
         });
     });
 
-    // Start the server
-    server.listen(0, () => {
-        context.res = {
-            status: 200,
-            body: "Socket.IO server is running"
-        };
-    });
+    context.res = {
+        body: "Socket.IO server is running"
+    };
 };
